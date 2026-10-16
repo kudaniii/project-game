@@ -1,0 +1,8 @@
+{
+  "name": "Bubu & Dudu: Two Hearts, One Adventure",
+  "description": "Game platformer puzzle petualangan 2D romantis kooperatif lokal untuk dua pemain dengan Bubu si beruang dan Dudu si kelinci. Dioptimalkan untuk PC dan HP dengan kontrol sentuh & HUD menarik.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
