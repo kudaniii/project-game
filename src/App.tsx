@@ -21,6 +21,10 @@ import { LevelSelectModal } from './components/LevelSelectModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { EndingScreen } from './components/EndingScreen.tsx';
 import { DeviceSelectModal } from './components/DeviceSelectModal.tsx';
+import { OnlineLobbyModal } from './components/OnlineLobbyModal.tsx';
+import { ProfileModal } from './components/ProfileModal.tsx';
+import { OrientationWarning } from './components/OrientationWarning.tsx';
+import { multiplayerClient } from './multiplayer/MultiplayerClient.ts';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -30,6 +34,15 @@ export default function App() {
   const [saveData, setSaveData] = useState<GameSaveData>(() => storageManager.load());
   const [gameMode, setGameMode] = useState<GameMode>('two_player');
   const [activeStorySceneId, setActiveStorySceneId] = useState<string | null>(null);
+
+  // Online Multiplayer State
+  const [isOnline, setIsOnline] = useState<boolean>(false);
+  const [myOnlineChar, setMyOnlineChar] = useState<'bubu' | 'dudu'>('bubu');
+  const [showOnlineLobby, setShowOnlineLobby] = useState<boolean>(false);
+  const [urlRoomCode, setUrlRoomCode] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState<string>(() => {
+    return localStorage.getItem('bubu_dudu_player_name') || 'Petualang';
+  });
 
   // Device selection modal: shown on first launch if user hasn't chosen yet
   const [showDeviceSelect, setShowDeviceSelect] = useState<boolean>(() => {
@@ -51,12 +64,27 @@ export default function App() {
   const [showCharacterIntro, setShowCharacterIntro] = useState(false);
   const [showLevelSelect, setShowLevelSelect] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [showPause, setShowPause] = useState(false);
   const [completedLevelInfo, setCompletedLevelInfo] = useState<{
     id: number;
     stars: number;
     flowers: number;
   } | null>(null);
+
+  // --- PARSE INVITE LINK (?room=XYZ) ON LAUNCH ---
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      if (roomParam) {
+        setUrlRoomCode(roomParam.toUpperCase());
+        setShowOnlineLobby(true);
+      }
+    } catch {
+      // Ignore URL parse error
+    }
+  }, []);
 
   // --- INITIALIZE ENGINE & INPUTS ---
   useEffect(() => {
@@ -92,14 +120,12 @@ export default function App() {
     };
   }, [screen]);
 
-  // --- RESIZE CANVAS TO MATCH VIEWPORT (WITH DPR SCALING) ---
+  // --- RESIZE CANVAS TO MATCH VIEWPORT ---
   const resizeCanvas = () => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
   };
 
   useEffect(() => {
@@ -113,7 +139,12 @@ export default function App() {
   }, [screen]);
 
   // --- ENGINE SETUP WHEN ENTERING GAMEPLAY ---
-  const initAndStartEngine = (levelId: number, mode: GameMode) => {
+  const initAndStartEngine = (
+    levelId: number,
+    mode: GameMode,
+    online: boolean = false,
+    onlineChar: 'bubu' | 'dudu' = 'bubu'
+  ) => {
     if (!canvasRef.current) return;
     resizeCanvas();
 
@@ -134,7 +165,7 @@ export default function App() {
       }
     };
 
-    engine.loadLevel(levelId, mode);
+    engine.loadLevel(levelId, mode, online, onlineChar);
     engine.start();
 
     // Start interval to sync HUD
@@ -147,8 +178,23 @@ export default function App() {
     return () => clearInterval(hudInterval);
   };
 
-  // --- USER NAVIGATION ACTIONS ---
+  // --- START ONLINE GAME FROM LOBBY ---
+  const handleStartOnlineGame = (levelId: number, myChar: 'bubu' | 'dudu') => {
+    setIsOnline(true);
+    setMyOnlineChar(myChar);
+    setGameMode('two_player');
+    setShowOnlineLobby(false);
+    setShowLevelSelect(false);
+    setShowPause(false);
+    setCompletedLevelInfo(null);
+    setScreen('gameplay');
+
+    setTimeout(() => initAndStartEngine(levelId, 'two_player', true, myChar), 50);
+  };
+
+  // --- USER NAVIGATION ACTIONS (LOCAL) ---
   const handleStartGame = (levelId: number, mode: GameMode) => {
+    setIsOnline(false);
     setGameMode(mode);
     setShowLevelSelect(false);
     setShowPause(false);
@@ -164,7 +210,7 @@ export default function App() {
         setActiveStorySceneId(introId);
       } else {
         setScreen('gameplay');
-        setTimeout(() => initAndStartEngine(levelId, mode), 50);
+        setTimeout(() => initAndStartEngine(levelId, mode, false), 50);
       }
     }
   };
@@ -185,7 +231,7 @@ export default function App() {
     setActiveStorySceneId(null);
     setScreen('gameplay');
     const targetLevel = engineRef.current?.currentLevelData.id || 1;
-    setTimeout(() => initAndStartEngine(targetLevel, gameMode), 50);
+    setTimeout(() => initAndStartEngine(targetLevel, gameMode, isOnline, myOnlineChar), 50);
   };
 
   const handleNextLevel = () => {
@@ -200,7 +246,7 @@ export default function App() {
         setActiveStorySceneId(nextIntroId);
       } else {
         setScreen('gameplay');
-        setTimeout(() => initAndStartEngine(nextId, gameMode), 50);
+        setTimeout(() => initAndStartEngine(nextId, gameMode, isOnline, myOnlineChar), 50);
       }
     }
   };
@@ -210,12 +256,16 @@ export default function App() {
       completedLevelInfo?.id || engineRef.current?.currentLevelData.id || 1;
     setCompletedLevelInfo(null);
     setScreen('gameplay');
-    setTimeout(() => initAndStartEngine(currentId, gameMode), 50);
+    setTimeout(() => initAndStartEngine(currentId, gameMode, isOnline, myOnlineChar), 50);
   };
 
   const handleReturnToMenu = () => {
     if (engineRef.current) {
       engineRef.current.stop();
+    }
+    if (isOnline) {
+      multiplayerClient.leaveRoom();
+      setIsOnline(false);
     }
     setShowPause(false);
     setCompletedLevelInfo(null);
@@ -265,6 +315,9 @@ export default function App() {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#FAF6F0] font-['Quicksand',sans-serif] select-none touch-none">
       
+      {/* Mobile Orientation Landscape Advisory Banner */}
+      <OrientationWarning />
+
       {/* Active 2D Canvas */}
       <canvas
         ref={canvasRef}
@@ -279,10 +332,13 @@ export default function App() {
       {screen === 'menu' && (
         <MainMenu
           saveData={saveData}
+          playerName={playerName}
           gameMode={gameMode}
           onToggleGameMode={setGameMode}
           onPlay={(lvl, mode) => handleStartGame(lvl, mode)}
           onContinue={(lvl) => handleStartGame(lvl, gameMode)}
+          onOpenOnlineLobby={() => setShowOnlineLobby(true)}
+          onOpenProfile={() => setShowProfile(true)}
           onOpenLevelSelect={() => setShowLevelSelect(true)}
           onOpenCharacterIntro={() => setShowCharacterIntro(true)}
           onOpenSettings={() => setShowSettings(true)}
@@ -305,6 +361,9 @@ export default function App() {
             dudu={engineRef.current.dudu}
             starsCollected={starsCollected}
             gameMode={gameMode}
+            isOnline={isOnline}
+            myOnlineChar={myOnlineChar}
+            pingMs={multiplayerClient.pingMs}
             deviceMode={saveData.settings.deviceMode}
             showTouchControls={showTouchControls}
             onToggleTouchControls={handleToggleTouchControls}
@@ -315,17 +374,38 @@ export default function App() {
 
           {showTouchControls && !showPause && (
             <TouchControls
-              isPractice={gameMode === 'practice'}
-              activePracticeChar={practiceChar}
+              isPractice={gameMode === 'practice' || isOnline}
+              activePracticeChar={isOnline ? myOnlineChar : practiceChar}
               onSwitchPracticeChar={() => {
-                const next = inputManager.togglePracticeChar();
-                setPracticeChar(next);
-                soundEngine.playButtonClick();
+                if (!isOnline) {
+                  const next = inputManager.togglePracticeChar();
+                  setPracticeChar(next);
+                  soundEngine.playButtonClick();
+                }
               }}
               onResetCrates={() => engineRef.current?.resetCrates()}
             />
           )}
         </>
+      )}
+
+      {/* ONLINE LOBBY MODAL */}
+      {showOnlineLobby && (
+        <OnlineLobbyModal
+          initialRoomCode={urlRoomCode}
+          playerName={playerName}
+          onStartOnlineGame={handleStartOnlineGame}
+          onClose={() => setShowOnlineLobby(false)}
+        />
+      )}
+
+      {/* PLAYER PROFILE & STATS MODAL */}
+      {showProfile && (
+        <ProfileModal
+          saveData={saveData}
+          onUpdateName={(name) => setPlayerName(name)}
+          onClose={() => setShowProfile(false)}
+        />
       )}
 
       {/* STORY CUTSCENE MODAL */}

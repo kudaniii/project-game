@@ -1,6 +1,6 @@
 /**
- * Bubu & Dudu: Two Hearts, One Adventure
- * Gameplay HUD: Highly Attractive, Tactile 3D Buttons & Level Badges
+ * Bubu & Dudu: A Cozy Co-op Adventure
+ * Gameplay HUD: Highly Attractive, Tactile 3D Buttons, Online Indicator & Reaction Emotes
  */
 
 import React, { useState } from 'react';
@@ -19,10 +19,14 @@ import {
   Monitor,
   Repeat,
   Lightbulb,
+  Wifi,
+  Heart,
+  Smile,
 } from 'lucide-react';
 import { PlayerState, GameMode } from '../game/types.ts';
 import { soundEngine } from '../game/audio.ts';
 import { inputManager } from '../game/input.ts';
+import { multiplayerClient } from '../multiplayer/MultiplayerClient.ts';
 
 interface HUDProps {
   levelTitle: string;
@@ -39,6 +43,9 @@ interface HUDProps {
   dudu: PlayerState;
   starsCollected: number;
   gameMode: GameMode;
+  isOnline?: boolean;
+  myOnlineChar?: 'bubu' | 'dudu';
+  pingMs?: number;
   deviceMode: 'pc' | 'mobile';
   showTouchControls: boolean;
   onToggleTouchControls: () => void;
@@ -55,6 +62,9 @@ export const HUD: React.FC<HUDProps> = ({
   dudu,
   starsCollected,
   gameMode,
+  isOnline = false,
+  myOnlineChar = 'bubu',
+  pingMs = 0,
   deviceMode,
   showTouchControls,
   onToggleTouchControls,
@@ -85,6 +95,13 @@ export const HUD: React.FC<HUDProps> = ({
     setShowHintModal(!showHintModal);
   };
 
+  const handleSendEmote = (emote: 'heart' | 'star' | 'happy') => {
+    soundEngine.playCollectStar();
+    if (isOnline) {
+      multiplayerClient.sendEmote(emote);
+    }
+  };
+
   return (
     <>
       {/* ======================================================== */}
@@ -92,7 +109,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* ======================================================== */}
       <header className="absolute top-0 left-0 right-0 p-2 sm:p-3 md:p-4 pt-[max(0.6rem,env(safe-area-inset-top))] px-[max(0.6rem,env(safe-area-inset-left))] pr-[max(0.6rem,env(safe-area-inset-right))] flex flex-wrap gap-2 justify-between items-center pointer-events-none z-30 select-none">
         
-        {/* --- LEFT CLUSTER: LEVEL BADGE, STARS, OBJECTIVE, KEY --- */}
+        {/* --- LEFT CLUSTER: LEVEL BADGE, STARS, ONLINE STATUS, OBJECTIVE --- */}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
           
           {/* LEVEL BADGE WITH WOODEN/GOLD TEXTURE & STARS */}
@@ -121,6 +138,21 @@ export const HUD: React.FC<HUDProps> = ({
             </div>
           </div>
 
+          {/* ONLINE CO-OP CONNECTION STATUS BADGE */}
+          {isOnline ? (
+            <div className="hud-btn bg-gradient-to-r from-teal-500 to-emerald-600 text-white border-2 border-teal-300 border-b-3 border-b-teal-800 px-2.5 py-1 rounded-2xl flex items-center gap-1.5 text-[11px] font-black shadow-md">
+              <Wifi className="w-3.5 h-3.5 text-white animate-pulse" />
+              <span>Online ({myOnlineChar === 'bubu' ? '🐻 Bubu' : '🐰 Dudu'})</span>
+              <span className="text-[9px] bg-teal-900/50 px-1.5 py-0.2 rounded font-mono">
+                {pingMs || '<25'}ms
+              </span>
+            </div>
+          ) : (
+            <div className="hidden sm:flex items-center gap-1 bg-white/90 border border-stone-200 border-b-2 border-b-stone-300 px-2.5 py-1 rounded-2xl text-[11px] font-bold text-stone-600 shadow-xs">
+              <span>{gameMode === 'two_player' ? '👥 Co-op Lokal' : '👤 Latihan Solo'}</span>
+            </div>
+          )}
+
           {/* OBJECTIVE PILL */}
           {objectiveText && (
             <div className="hidden lg:flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/90 border-b-3 border-b-emerald-300 px-3 py-1.5 rounded-2xl shadow-sm text-xs font-bold text-emerald-900">
@@ -138,11 +170,11 @@ export const HUD: React.FC<HUDProps> = ({
           )}
 
           {/* SOLO PRACTICE CHARACTER SWITCHER BUTTON */}
-          {gameMode === 'practice' && (
+          {gameMode === 'practice' && !isOnline && (
             <button
               type="button"
               onClick={handleTogglePracticeChar}
-              className="hud-btn bg-gradient-to-b from-purple-100 to-purple-200 hover:from-purple-200 hover:to-purple-300 text-purple-950 border-2 border-purple-300 border-b-4 border-b-purple-400 px-2.5 py-1 rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
+              className="hud-btn bg-gradient-to-b from-purple-100 to-purple-200 hover:from-purple-200 hover:to-purple-300 text-purple-950 border-2 border-purple-300 border-b-4 border-b-purple-400 px-2.5 py-1 rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
               title="Ganti karakter yang dikontrol (Shortcut: [Tab] atau [Q])"
             >
               <Repeat className="w-3.5 h-3.5 text-purple-700" />
@@ -154,6 +186,36 @@ export const HUD: React.FC<HUDProps> = ({
               </span>
               <span className="hidden sm:inline-block text-[10px] bg-purple-300/80 text-purple-900 font-bold px-1 rounded">Q</span>
             </button>
+          )}
+
+          {/* ONLINE EMOTE REACTIONS BAR */}
+          {isOnline && (
+            <div className="flex items-center gap-1 bg-white/90 p-1 rounded-2xl border border-stone-200 shadow-sm">
+              <button
+                type="button"
+                onClick={() => handleSendEmote('heart')}
+                className="w-7 h-7 rounded-xl hover:bg-pink-100 flex items-center justify-center text-sm transition-transform active:scale-90 cursor-pointer"
+                title="Kirim Reaksi Cinta ❤️"
+              >
+                ❤️
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSendEmote('star')}
+                className="w-7 h-7 rounded-xl hover:bg-amber-100 flex items-center justify-center text-sm transition-transform active:scale-90 cursor-pointer"
+                title="Kirim Reaksi Bintang ⭐"
+              >
+                ⭐
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSendEmote('happy')}
+                className="w-7 h-7 rounded-xl hover:bg-teal-100 flex items-center justify-center text-sm transition-transform active:scale-90 cursor-pointer"
+                title="Kirim Semangat 👋"
+              >
+                🐾
+              </button>
+            </div>
           )}
 
         </div>
@@ -284,7 +346,7 @@ export const HUD: React.FC<HUDProps> = ({
               <button
                 type="button"
                 onClick={() => setShowHintModal(false)}
-                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 text-sm font-bold active:scale-95 transition-all"
+                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 text-sm font-bold active:scale-95 transition-all cursor-pointer"
               >
                 ✕
               </button>
@@ -391,7 +453,7 @@ export const HUD: React.FC<HUDProps> = ({
                     soundEngine.playButtonClick();
                     setShowHintModal(false);
                   }}
-                  className="hud-btn flex items-center gap-1.5 text-xs font-bold text-amber-950 bg-amber-300 hover:bg-amber-400 border border-amber-400 border-b-3 border-b-amber-600 px-3.5 py-2 rounded-xl transition-all active:scale-95 shadow-sm"
+                  className="hud-btn flex items-center gap-1.5 text-xs font-bold text-amber-950 bg-amber-300 hover:bg-amber-400 border border-amber-400 border-b-3 border-b-amber-600 px-3.5 py-2 rounded-xl transition-all active:scale-95 shadow-sm cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Reset Posisi Kotak Sekarang</span>
@@ -400,7 +462,7 @@ export const HUD: React.FC<HUDProps> = ({
               <button
                 type="button"
                 onClick={() => setShowHintModal(false)}
-                className="hud-btn ml-auto text-xs font-bold text-white bg-[#4A3B32] hover:bg-[#382B24] border border-[#5D4037] border-b-3 border-b-[#27150F] px-5 py-2 rounded-xl transition-all active:scale-95 shadow-sm"
+                className="hud-btn ml-auto text-xs font-bold text-white bg-[#4A3B32] hover:bg-[#382B24] border border-[#5D4037] border-b-3 border-b-[#27150F] px-5 py-2 rounded-xl transition-all active:scale-95 shadow-sm cursor-pointer"
               >
                 Tutup Panduan
               </button>

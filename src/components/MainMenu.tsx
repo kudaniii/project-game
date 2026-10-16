@@ -1,6 +1,6 @@
 /**
- * Bubu & Dudu: Two Hearts, One Adventure
- * Main Menu Screen with Device Switcher & Polished Tactile Buttons
+ * Bubu & Dudu: A Cozy Co-op Adventure
+ * Main Menu Screen with Local Co-op, Online Multiplayer, Solo Practice, and Device Controls
  */
 
 import React from 'react';
@@ -17,14 +17,18 @@ import {
   Smartphone,
   Monitor,
   User,
+  Wifi,
 } from 'lucide-react';
 import { GameSaveData, GameMode } from '../game/types.ts';
 import { soundEngine } from '../game/audio.ts';
 
 interface MainMenuProps {
   saveData: GameSaveData;
+  playerName: string;
   onPlay: (levelId: number, mode: GameMode) => void;
   onContinue: (levelId: number) => void;
+  onOpenOnlineLobby: () => void;
+  onOpenProfile: () => void;
   onOpenLevelSelect: () => void;
   onOpenCharacterIntro: () => void;
   onOpenSettings: () => void;
@@ -37,8 +41,11 @@ interface MainMenuProps {
 
 export const MainMenu: React.FC<MainMenuProps> = ({
   saveData,
+  playerName,
   onPlay,
   onContinue,
+  onOpenOnlineLobby,
+  onOpenProfile,
   onOpenLevelSelect,
   onOpenCharacterIntro,
   onOpenSettings,
@@ -55,17 +62,28 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-between p-3 sm:p-6 md:p-8 overflow-y-auto select-none bg-gradient-to-b from-[#F2F9F6] via-[#FAF6F0] to-[#FCEEEA]">
+    <div className="relative w-full h-full flex flex-col items-center justify-between p-3 sm:p-5 md:p-8 overflow-y-auto select-none bg-gradient-to-b from-[#F2F9F6] via-[#FAF6F0] to-[#FCEEEA]">
       
       {/* Decorative Pastel Background Circles */}
       <div className="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-pink-100/60 blur-3xl pointer-events-none"></div>
       <div className="absolute top-1/3 -right-20 w-96 h-96 rounded-full bg-teal-100/50 blur-3xl pointer-events-none"></div>
       <div className="absolute -bottom-20 left-1/4 w-80 h-80 rounded-full bg-amber-100/60 blur-3xl pointer-events-none"></div>
 
-      {/* Header Tagline */}
-      <div className="z-10 flex items-center gap-2 px-3.5 py-1 bg-white/90 backdrop-blur-md rounded-full border border-stone-200/90 shadow-xs text-xs font-bold text-stone-600 mt-1">
-        <Heart className="w-3.5 h-3.5 text-pink-500 fill-pink-500 animate-pulse" />
-        <span>Co-op 2D Platformer & Story Adventure</span>
+      {/* Top Header Row: Profile Badge & Tagline */}
+      <div className="z-10 w-full max-w-lg flex justify-between items-center gap-2 mt-1">
+        <button
+          type="button"
+          onClick={() => handleAction(onOpenProfile)}
+          className="hud-btn flex items-center gap-1.5 px-3 py-1 bg-white/90 backdrop-blur-md rounded-full border border-stone-200/90 shadow-xs text-xs font-bold text-stone-700 hover:text-stone-900 active:scale-95 cursor-pointer"
+        >
+          <User className="w-3.5 h-3.5 text-amber-700" />
+          <span>{playerName || 'Profil Petualang'}</span>
+        </button>
+
+        <div className="flex items-center gap-1.5 px-3 py-1 bg-white/90 backdrop-blur-md rounded-full border border-stone-200/90 shadow-xs text-xs font-bold text-stone-600">
+          <Heart className="w-3.5 h-3.5 text-pink-500 fill-pink-500 animate-pulse" />
+          <span>Co-op 2D Adventure</span>
+        </div>
       </div>
 
       {/* Main Brand Title & Animated Couple Art */}
@@ -76,19 +94,19 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           Bubu <span className="text-pink-500">&</span> Dudu
         </h1>
         <p className="text-stone-600 font-bold text-sm sm:text-base mt-0.5 flex items-center gap-1.5">
-          <span>Two Hearts, One Adventure</span>
+          <span>A Cozy Co-op Adventure</span>
           <Sparkles className="w-4 h-4 text-amber-500" />
         </p>
 
         {/* Adorable SVG Character Centerpiece */}
-        <div className="my-3 sm:my-4 relative flex items-center justify-center">
-          <div className="w-56 h-32 sm:h-36 relative flex items-center justify-center">
+        <div className="my-2.5 sm:my-3.5 relative flex items-center justify-center">
+          <div className="w-56 h-28 sm:h-32 relative flex items-center justify-center">
             {/* Glowing Heart Aura */}
-            <div className="absolute w-44 h-28 bg-pink-200/60 rounded-full filter blur-xl animate-pulse"></div>
+            <div className="absolute w-44 h-24 bg-pink-200/60 rounded-full filter blur-xl animate-pulse"></div>
 
             {/* Bubu (Brown Bear) SVG */}
             <svg
-              className="w-24 h-24 sm:w-28 sm:h-28 transform -translate-x-3 sm:-translate-x-4 animate-bounce"
+              className="w-24 h-24 sm:w-26 sm:h-26 transform -translate-x-3 sm:-translate-x-4 animate-bounce"
               style={{ animationDuration: '3s' }}
               viewBox="0 0 100 100"
             >
@@ -121,7 +139,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
             {/* Dudu (White Bunny) SVG */}
             <svg
-              className="w-24 h-24 sm:w-28 sm:h-28 transform translate-x-3 sm:translate-x-4 animate-bounce"
+              className="w-24 h-24 sm:w-26 sm:h-26 transform translate-x-3 sm:translate-x-4 animate-bounce"
               style={{ animationDuration: '2.6s', animationDelay: '0.4s' }}
               viewBox="0 0 100 100"
             >
@@ -191,104 +209,94 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </div>
         </div>
 
-        {/* MODE SELECTOR SEGMENT (2 PLAYERS VS SOLO) */}
-        <div className="flex items-center gap-1 p-1 bg-stone-200/80 backdrop-blur-md rounded-2xl mb-3 border border-stone-300/60 w-full max-w-xs">
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playButtonClick();
-              onToggleGameMode('two_player');
-            }}
-            className={`hud-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              gameMode === 'two_player'
-                ? 'bg-white text-stone-900 shadow-sm border border-stone-200'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 text-pink-500" />
-            <span>2 Pemain</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playButtonClick();
-              onToggleGameMode('practice');
-            }}
-            className={`hud-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              gameMode === 'practice'
-                ? 'bg-white text-stone-900 shadow-sm border border-stone-200'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <User className="w-3.5 h-3.5 text-purple-600" />
-            <span>Latihan Solo</span>
-          </button>
-        </div>
-
-        {/* PRIMARY ACTION BUTTONS */}
+        {/* PRIMARY GAMEPLAY ENTRY BUTTONS */}
         <div className="flex flex-col gap-2 w-full max-w-xs">
           
-          {/* Continue button if progress exists */}
+          {/* 1. MULTIPLAYER ONLINE CO-OP (FEATURED!) */}
+          <button
+            type="button"
+            onClick={() => handleAction(onOpenOnlineLobby)}
+            className="hud-btn group flex items-center justify-center gap-2 py-3 px-6 bg-gradient-to-b from-teal-500 via-teal-600 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white font-extrabold rounded-2xl border border-teal-300 border-b-4 border-b-teal-900 shadow-lg transition-all text-sm cursor-pointer active:scale-95"
+          >
+            <Wifi className="w-4 h-4 text-teal-100 animate-pulse" />
+            <span>Multiplayer Online Co-op</span>
+            <span className="text-[10px] bg-teal-900/40 text-teal-100 px-1.5 py-0.2 rounded font-bold shadow-inner">
+              2 HP / PC
+            </span>
+          </button>
+
+          {/* 2. LOCAL CO-OP (1 PERANGKAT 2 ORANG) */}
+          <button
+            type="button"
+            onClick={() => handleAction(() => onPlay(1, 'two_player'))}
+            className="hud-btn flex items-center justify-center gap-2 py-3 px-6 bg-gradient-to-b from-[#5D4037] to-[#3E2723] hover:from-[#4E342E] hover:to-[#2E1C14] border border-[#8D6E63] border-b-4 border-b-[#27150F] active:scale-95 text-white font-extrabold rounded-2xl shadow-md transition-all text-sm cursor-pointer"
+          >
+            <Users className="w-4 h-4 text-pink-300" />
+            <span>Mode 2 Pemain Lokal</span>
+          </button>
+
+          {/* 3. SOLO PRACTICE MODE (1 PEMAIN) */}
+          <button
+            type="button"
+            onClick={() => handleAction(() => onPlay(1, 'practice'))}
+            className="hud-btn flex items-center justify-center gap-2 py-2.5 px-6 bg-gradient-to-b from-purple-50 to-purple-100 hover:from-purple-100 hover:to-purple-200 text-purple-950 font-bold rounded-2xl border border-purple-200 border-b-3 border-b-purple-400 shadow-xs transition-all text-xs cursor-pointer active:scale-95"
+          >
+            <User className="w-3.5 h-3.5 text-purple-700" />
+            <span>Mode Latihan (Solo)</span>
+          </button>
+
+          {/* 4. Continue Button if progress exists */}
           {saveData.unlockedLevels > 1 && (
             <button
               type="button"
               onClick={() => handleAction(() => onContinue(saveData.currentLevel))}
-              className="hud-btn flex items-center justify-center gap-2 py-3 px-6 bg-gradient-to-b from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white font-bold rounded-2xl border border-amber-400 border-b-4 border-b-amber-800 shadow-md transition-all text-sm cursor-pointer"
+              className="hud-btn flex items-center justify-center gap-2 py-2 px-5 bg-amber-50 hover:bg-amber-100 active:scale-95 text-amber-900 font-bold rounded-xl border border-amber-300 border-b-2 border-b-amber-500 shadow-xs transition-all text-xs cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
               <span>Lanjutkan (Level {saveData.currentLevel})</span>
             </button>
           )}
 
-          {/* New Game / Play */}
-          <button
-            type="button"
-            onClick={() => handleAction(() => onPlay(1, gameMode))}
-            className="hud-btn flex items-center justify-center gap-2 py-3.5 px-6 bg-gradient-to-b from-[#5D4037] to-[#3E2723] hover:from-[#4E342E] hover:to-[#2E1C14] border border-[#8D6E63] border-b-4 border-b-[#27150F] active:scale-95 text-white font-extrabold rounded-2xl shadow-lg transition-all text-sm cursor-pointer"
-          >
-            <Play className="w-4 h-4 fill-white" />
-            <span>Mulai Petualangan</span>
-          </button>
+          {/* Navigation Links: Level Select & Controls */}
+          <div className="grid grid-cols-2 gap-1.5 mt-0.5">
+            <button
+              type="button"
+              onClick={() => handleAction(onOpenLevelSelect)}
+              className="hud-btn flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-stone-50 active:scale-95 text-stone-800 font-bold rounded-xl border border-stone-200 border-b-2 border-b-stone-300 shadow-xs transition-all text-xs cursor-pointer"
+            >
+              <ListFilter className="w-3.5 h-3.5 text-stone-600" />
+              <span>Pilih Level</span>
+            </button>
 
-          {/* Level Select */}
-          <button
-            type="button"
-            onClick={() => handleAction(onOpenLevelSelect)}
-            className="hud-btn flex items-center justify-center gap-2 py-2.5 px-6 bg-white hover:bg-stone-50 active:scale-95 text-stone-800 font-bold rounded-2xl border border-stone-200 border-b-3 border-b-stone-300 shadow-sm transition-all text-xs sm:text-sm cursor-pointer"
-          >
-            <ListFilter className="w-4 h-4 text-stone-600" />
-            <span>Pilih Level ({saveData.unlockedLevels}/5 Terbuka)</span>
-          </button>
-
-          {/* Character & Controls Guide */}
-          <button
-            type="button"
-            onClick={() => handleAction(onOpenCharacterIntro)}
-            className="hud-btn flex items-center justify-center gap-2 py-2 px-5 bg-white/80 hover:bg-white text-stone-700 font-semibold rounded-2xl border border-stone-200/80 border-b-2 border-b-stone-300 shadow-xs transition-all text-xs cursor-pointer"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-amber-700" />
-            <span>Karakter & Panduan Kontrol</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => handleAction(onOpenCharacterIntro)}
+              className="hud-btn flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-stone-50 active:scale-95 text-stone-800 font-bold rounded-xl border border-stone-200 border-b-2 border-b-stone-300 shadow-xs transition-all text-xs cursor-pointer"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-700" />
+              <span>Panduan</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Footer Navigation: Settings, Credits & Author */}
-      <footer className="z-10 flex flex-wrap justify-center items-center gap-4 text-xs font-semibold text-stone-600 my-1">
+      <footer className="z-10 flex flex-wrap justify-center items-center gap-3.5 text-xs font-semibold text-stone-600 my-1">
         <button
           type="button"
           onClick={() => handleAction(onOpenSettings)}
-          className="flex items-center gap-1.5 hover:text-stone-900 transition-colors"
+          className="flex items-center gap-1.5 hover:text-stone-900 transition-colors cursor-pointer"
         >
-          <Settings className="w-4 h-4" />
+          <Settings className="w-3.5 h-3.5" />
           <span>Pengaturan</span>
         </button>
         <span className="text-stone-300">·</span>
         <button
           type="button"
           onClick={() => handleAction(onOpenCredits)}
-          className="flex items-center gap-1.5 hover:text-stone-900 transition-colors"
+          className="flex items-center gap-1.5 hover:text-stone-900 transition-colors cursor-pointer"
         >
-          <Award className="w-4 h-4" />
+          <Award className="w-3.5 h-3.5" />
           <span>Kredit</span>
         </button>
         <span className="text-stone-300">·</span>

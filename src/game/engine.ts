@@ -1,6 +1,6 @@
 /**
- * Bubu & Dudu: Two Hearts, One Adventure
- * Core Game Engine: Game Loop, Cooperative Camera, Particles, and Level Flow
+ * Bubu & Dudu: A Cozy Co-op Adventure
+ * Core Game Engine: Game Loop, Cooperative Camera, Particles, Physics & Online Sync
  */
 
 import { PlayerState, LevelData, Particle, GameMode } from './types.ts';
@@ -10,6 +10,7 @@ import { GameRenderer } from './renderer.ts';
 import { inputManager } from './input.ts';
 import { soundEngine } from './audio.ts';
 import { storageManager } from './storage.ts';
+import { multiplayerClient } from '../multiplayer/MultiplayerClient.ts';
 
 export class GameEngine {
   private canvas: HTMLCanvasElement;
@@ -21,7 +22,7 @@ export class GameEngine {
   public dudu: PlayerState;
   public particles: Particle[] = [];
 
-  // Cooperative Camera
+  // Cooperative Camera (1280x720 base standard)
   public camera = {
     x: 0,
     y: 0,
@@ -38,10 +39,28 @@ export class GameEngine {
   private gameTime: number = 0;
 
   public gameMode: GameMode = 'two_player';
+  public isOnline: boolean = false;
+  public myOnlineChar: 'bubu' | 'dudu' = 'bubu';
+
   public starsCollectedThisLevel: number = 0;
   public flowersCollectedThisLevel: number = 0;
   public isVictory: boolean = false;
   public victoryTimer: number = 0;
+
+  // Remote interpolation targets
+  private remoteTarget = {
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    state: 'idle',
+    facing: 'right' as 'left' | 'right',
+    isCarrying: false,
+    hasKey: null as string | null,
+  };
+
+  private lastNetSendTime: number = 0;
+  private unsubscribeMultiplayer: (() => void)[] = [];
 
   // Callbacks
   public onLevelComplete?: (levelId: number, stars: number, flowers: number) => void;
@@ -90,10 +109,13 @@ export class GameEngine {
     };
   }
 
-  public loadLevel(levelId: number, mode: GameMode = 'two_player') {
+  public loadLevel(levelId: number, mode: GameMode = 'two_player', isOnline: boolean = false, myOnlineChar: 'bubu' | 'dudu' = 'bubu') {
     const raw = GAME_LEVELS.find((l) => l.id === levelId) || GAME_LEVELS[0];
     this.currentLevelData = JSON.parse(JSON.stringify(raw));
     this.gameMode = mode;
+    this.isOnline = isOnline;
+    this.myOnlineChar = myOnlineChar;
+
     this.starsCollectedThisLevel = 0;
     this.flowersCollectedThisLevel = 0;
     this.isVictory = false;
@@ -114,7 +136,7 @@ export class GameEngine {
 
     inputManager.setPracticeMode(mode === 'practice', 'bubu');
 
-    // Reset camera immediately onto spawn
+    // Camera initial position
     this.camera.x = (this.bubu.x + this.dudu.x) / 2;
     this.camera.y = (this.bubu.y + this.dudu.y) / 2;
     this.camera.targetX = this.camera.x;
@@ -127,6 +149,87 @@ export class GameEngine {
 
     // Register quick R-key crate reset
     inputManager.onResetCallback = () => this.resetCrates();
+
+    // Setup Online Multiplayer Listeners
+    this.cleanupMultiplayer();
+    if (this.isOnline) {
+      this.setupMultiplayerListeners();
+    }
+  }
+
+  private setupMultiplayerListeners() {
+    const un1 = multiplayerClient.on('REMOTE_PLAYER_UPDATE', (payload: any) => {
+      const char = payload.character;
+      const data = payload.data;
+      if (!data) return;
+
+      const remotePlayer = char === 'bubu' ? this.bubu : this.dudu;
+      // Smooth interpolation target
+      this.remoteTarget = {
+        x: data.x,
+        y: data.y,
+        vx: data.vx,
+        vy: data.vy,
+        state: data.state,
+        facing: data.facing,
+        isCarrying: data.isCarrying,
+        hasKey: data.hasKey,
+      };
+
+      remotePlayer.vx = data.vx;
+      remotePlayer.vy = data.vy;
+      remotePlayer.facing = data.facing;
+      remotePlayer.state = data.state;
+      remotePlayer.hasKey = data.hasKey;
+      remotePlayer.isCarrying = data.isCarrying;
+    });
+
+    const un2 = multiplayerClient.on('PUZZLE_STATE_SYNC', (payload: any) => {
+      const evt = payload.event;
+      if (!evt) return;
+
+      if (evt.eventType === 'lever_toggle' && evt.targetId) {
+        const sw = this.currentLevelData.switches.find((s) => s.id === evt.targetId);
+        if (sw) {
+          sw.isPressed = Boolean(evt.value);
+          soundEngine.playSwitchClick();
+          this.spawnSparkles(sw.x + sw.width / 2, sw.y + sw.height / 2, '#FFD54F', 8);
+        }
+      } else if (evt.eventType === 'collect_item' && evt.targetId) {
+        const item = this.currentLevelData.collectibles.find((c) => c.id === evt.targetId);
+        if (item && !item.collected) {
+          item.collected = true;
+          soundEngine.playCollectStar();
+          this.spawnSparkles(item.x + item.width / 2, item.y + item.height / 2, '#FFE082', 12);
+        }
+      } else if (evt.eventType === 'checkpoint' && evt.targetId) {
+        const cp = this.currentLevelData.checkpoints.find((c) => c.id === evt.targetId);
+        if (cp) {
+          cp.isActivated = true;
+          this.bubu.respawnX = cp.x - 20;
+          this.bubu.respawnY = cp.y;
+          this.dudu.respawnX = cp.x + 40;
+          this.dudu.respawnY = cp.y;
+          soundEngine.playCheckpoint();
+          this.spawnHearts(cp.x + cp.width / 2, cp.y + 20, 14);
+        }
+      }
+    });
+
+    const un3 = multiplayerClient.on('REMOTE_EMOTE', (payload: any) => {
+      const char = payload.character;
+      const target = char === 'bubu' ? this.bubu : this.dudu;
+      this.spawnEmoteParticles(target.x + target.width / 2, target.y - 10, payload.emote);
+    });
+
+    this.unsubscribeMultiplayer = [un1, un2, un3];
+  }
+
+  private cleanupMultiplayer() {
+    for (const un of this.unsubscribeMultiplayer) {
+      un();
+    }
+    this.unsubscribeMultiplayer = [];
   }
 
   public start() {
@@ -140,6 +243,7 @@ export class GameEngine {
   public stop() {
     this.isRunning = false;
     inputManager.onResetCallback = undefined;
+    this.cleanupMultiplayer();
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
@@ -154,7 +258,10 @@ export class GameEngine {
   }
 
   public restartCurrentLevel() {
-    this.loadLevel(this.currentLevelData.id, this.gameMode);
+    this.loadLevel(this.currentLevelData.id, this.gameMode, this.isOnline, this.myOnlineChar);
+    if (this.isOnline) {
+      multiplayerClient.restartLevel();
+    }
   }
 
   public resetCrates() {
@@ -184,7 +291,7 @@ export class GameEngine {
     const rawDelta = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
 
-    // Clamp delta time to avoid large jumps on tab switch
+    // Clamp delta time to avoid large jumps
     const dt = Math.min(0.05, Math.max(0.001, rawDelta));
     const dtScale = dt * 60; // 1.0 at 60fps
 
@@ -213,28 +320,76 @@ export class GameEngine {
       this.currentLevelData.height
     );
 
-    // Update Players
-    PhysicsEngine.updatePlayer(
-      this.bubu,
-      inputs.bubu,
-      this.currentLevelData.platforms,
-      this.currentLevelData.crates,
-      this.currentLevelData.doors,
-      this.currentLevelData.windDrafts,
-      dtScale
-    );
+    // Update Players based on Mode
+    if (this.isOnline) {
+      // In Online Co-op: locally drive ONLY my character, smoothly interpolate remote character
+      if (this.myOnlineChar === 'bubu') {
+        PhysicsEngine.updatePlayer(
+          this.bubu,
+          inputs.bubu,
+          this.currentLevelData.platforms,
+          this.currentLevelData.crates,
+          this.currentLevelData.doors,
+          this.currentLevelData.windDrafts,
+          dtScale
+        );
+        // Interpolate remote Dudu
+        this.interpolateRemotePlayer(this.dudu, dtScale);
+      } else {
+        PhysicsEngine.updatePlayer(
+          this.dudu,
+          inputs.dudu,
+          this.currentLevelData.platforms,
+          this.currentLevelData.crates,
+          this.currentLevelData.doors,
+          this.currentLevelData.windDrafts,
+          dtScale
+        );
+        // Interpolate remote Bubu
+        this.interpolateRemotePlayer(this.bubu, dtScale);
+      }
 
-    PhysicsEngine.updatePlayer(
-      this.dudu,
-      inputs.dudu,
-      this.currentLevelData.platforms,
-      this.currentLevelData.crates,
-      this.currentLevelData.doors,
-      this.currentLevelData.windDrafts,
-      dtScale
-    );
+      // Send local player state to server at ~30Hz
+      const now = performance.now();
+      if (now - this.lastNetSendTime > 33) {
+        this.lastNetSendTime = now;
+        const localChar = this.myOnlineChar === 'bubu' ? this.bubu : this.dudu;
+        multiplayerClient.sendPlayerUpdate({
+          x: Math.round(localChar.x * 10) / 10,
+          y: Math.round(localChar.y * 10) / 10,
+          vx: Math.round(localChar.vx * 10) / 10,
+          vy: Math.round(localChar.vy * 10) / 10,
+          facing: localChar.facing,
+          state: localChar.state,
+          isCarrying: localChar.isCarrying,
+          carriedCrateId: localChar.carriedCrateId,
+          hasKey: localChar.hasKey,
+        });
+      }
+    } else {
+      // Local Co-op or Solo Practice: both characters updated by physics engine
+      PhysicsEngine.updatePlayer(
+        this.bubu,
+        inputs.bubu,
+        this.currentLevelData.platforms,
+        this.currentLevelData.crates,
+        this.currentLevelData.doors,
+        this.currentLevelData.windDrafts,
+        dtScale
+      );
 
-    // 3. Levers interaction (F for Bubu, Enter for Dudu)
+      PhysicsEngine.updatePlayer(
+        this.dudu,
+        inputs.dudu,
+        this.currentLevelData.platforms,
+        this.currentLevelData.crates,
+        this.currentLevelData.doors,
+        this.currentLevelData.windDrafts,
+        dtScale
+      );
+    }
+
+    // 3. Levers interaction
     this.handleLeverInteractions(inputs);
 
     // 4. Switches & Doors
@@ -266,6 +421,14 @@ export class GameEngine {
     this.updateParticles(dtScale);
   }
 
+  private interpolateRemotePlayer(player: PlayerState, dtScale: number) {
+    if (this.remoteTarget.x !== 0 || this.remoteTarget.y !== 0) {
+      const lerp = Math.min(1, 0.28 * dtScale);
+      player.x += (this.remoteTarget.x - player.x) * lerp;
+      player.y += (this.remoteTarget.y - player.y) * lerp;
+    }
+  }
+
   private handleLeverInteractions(inputs: {
     bubu: { action: boolean };
     dudu: { action: boolean };
@@ -293,13 +456,34 @@ export class GameEngine {
           sw.width,
           sw.height
         );
-        const canToggle = !sw.lastToggleTime || now - sw.lastToggleTime > 400; // 400ms debounce
-        if (canToggle && ((bubuNear && inputs.bubu.action) || (duduNear && inputs.dudu.action))) {
-          // Toggle lever
+        const canToggle = !sw.lastToggleTime || now - sw.lastToggleTime > 400;
+
+        let shouldToggle = false;
+        if (this.isOnline) {
+          if (this.myOnlineChar === 'bubu' && bubuNear && inputs.bubu.action && canToggle) {
+            shouldToggle = true;
+          } else if (this.myOnlineChar === 'dudu' && duduNear && inputs.dudu.action && canToggle) {
+            shouldToggle = true;
+          }
+        } else {
+          if (canToggle && ((bubuNear && inputs.bubu.action) || (duduNear && inputs.dudu.action))) {
+            shouldToggle = true;
+          }
+        }
+
+        if (shouldToggle) {
           sw.isPressed = !sw.isPressed;
           sw.lastToggleTime = now;
           soundEngine.playSwitchClick();
           this.spawnSparkles(sw.x + sw.width / 2, sw.y + sw.height / 2, '#FFD54F', 6);
+
+          if (this.isOnline) {
+            multiplayerClient.sendPuzzleEvent({
+              eventType: 'lever_toggle',
+              targetId: sw.id,
+              value: sw.isPressed,
+            });
+          }
         }
       }
     }
@@ -345,6 +529,13 @@ export class GameEngine {
           soundEngine.playCollectFlower();
           this.spawnHearts(item.x + item.width / 2, item.y + item.height / 2, 6);
         }
+
+        if (this.isOnline) {
+          multiplayerClient.sendPuzzleEvent({
+            eventType: 'collect_item',
+            targetId: item.id,
+          });
+        }
       }
     }
   }
@@ -373,13 +564,19 @@ export class GameEngine {
       );
       if ((bubuTouch || duduTouch) && !cp.isActivated) {
         cp.isActivated = true;
-        // Update both players' respawn point
         this.bubu.respawnX = cp.x - 20;
         this.bubu.respawnY = cp.y;
         this.dudu.respawnX = cp.x + 40;
         this.dudu.respawnY = cp.y;
         soundEngine.playCheckpoint();
         this.spawnHearts(cp.x + cp.width / 2, cp.y + 20, 14);
+
+        if (this.isOnline) {
+          multiplayerClient.sendPuzzleEvent({
+            eventType: 'checkpoint',
+            targetId: cp.id,
+          });
+        }
       }
     }
   }
@@ -462,7 +659,7 @@ export class GameEngine {
     }
   }
 
-  // --- COOPERATIVE DUAL-PLAYER CAMERA ---
+  // --- COOPERATIVE DUAL-PLAYER CAMERA (1280x720 LOGICAL SCALING) ---
   private updateCamera(dtScale: number) {
     const p1 = this.bubu;
     const p2 = this.dudu;
@@ -475,12 +672,12 @@ export class GameEngine {
     const dx = Math.abs(p1.x + p1.width / 2 - (p2.x + p2.width / 2));
     const dy = Math.abs(p1.y + p1.height / 2 - (p2.y + p2.height / 2));
 
-    // Dynamic zoom to keep both in view comfortably
+    // Dynamic zoom to keep both in view comfortably based on 1280x720 logical baseline
     const viewW = this.canvas.width;
     const viewH = this.canvas.height;
     const zoomX = (viewW * 0.7) / Math.max(380, dx + 120);
     const zoomY = (viewH * 0.7) / Math.max(260, dy + 100);
-    const targetZoom = Math.max(0.75, Math.min(1.15, Math.min(zoomX, zoomY)));
+    const targetZoom = Math.max(0.72, Math.min(1.2, Math.min(zoomX, zoomY)));
 
     this.camera.targetX = midX;
     this.camera.targetY = midY;
@@ -531,6 +728,17 @@ export class GameEngine {
     }
   }
 
+  public spawnEmoteParticles(x: number, y: number, emote: string) {
+    if (emote === 'heart') {
+      this.spawnHearts(x, y, 12);
+    } else if (emote === 'star') {
+      this.spawnSparkles(x, y, '#FFD54F', 12);
+    } else {
+      this.spawnHearts(x, y, 6);
+      this.spawnSparkles(x, y, '#FFB74D', 6);
+    }
+  }
+
   private updateParticles(dtScale: number) {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
@@ -555,7 +763,7 @@ export class GameEngine {
 
     ctx.clearRect(0, 0, viewW, viewH);
 
-    // 1. Background (using camera parallax)
+    // 1. Background
     this.renderer.renderBackground(
       this.currentLevelData,
       this.camera.x,
@@ -565,7 +773,7 @@ export class GameEngine {
       this.gameTime
     );
 
-    // 2. World Transform (Camera follow & zoom)
+    // 2. World Transform (16:9 responsive logical framing)
     ctx.save();
     ctx.translate(viewW / 2, viewH / 2);
     ctx.scale(this.camera.zoom, this.camera.zoom);
